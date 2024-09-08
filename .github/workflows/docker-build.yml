@@ -1,0 +1,69 @@
+name: Docker build and publish
+
+on:
+    push:
+    workflow_dispatch:
+
+env:
+    DOCKER_BUILDKIT: 1
+    DOCKER_BUILDKIT_INLINE_CACHE: 1
+    DOCKER_IMAGE_NAME: ${{ github.repository }}
+    DOCKER_FILE: https://raw.githubusercontent.com/ENTNET/dockerfiles/latest/dockerfile.x11-apps
+
+jobs:
+    docker-build:
+        runs-on: ubuntu-latest
+        steps:
+        -   name: Set up QEMU
+            uses: docker/setup-qemu-action@v3
+
+        -   name: Set up Docker Buildx
+            uses: docker/setup-buildx-action@v3
+
+        -   name: Docker meta
+            id: meta
+            uses: docker/metadata-action@v5
+            with:
+                images: ${{ env.DOCKER_IMAGE_NAME }}
+                labels: |
+                    org.opencontainers.image.title=${{ github.repository }}
+                    org.opencontainers.image.licenses=MIT
+                    org.opencontainers.image.description=https://github.com/${{ github.repository }}
+                    org.opencontainers.image.url=https://github.com/${{ github.repository }}
+                    org.opencontainers.image.source=https://github.com/${{ github.repository }}
+                    org.opencontainers.image.vendor=${{ github.repository_owner }}
+                    org.opencontainers.image.revision=${{ github.sha }}
+
+        -   name: Check dockerhub-token exist
+            id: dockerhub-token
+            shell: bash
+            run: |
+                if [ "${{ secrets.DOCKERHUB_TOKEN }}" != '' ]; then
+                    echo "exist=true" >> $GITHUB_OUTPUT
+                fi
+
+        -   name: Login to DockerHub
+            if: steps.dockerhub-token.outputs.exist == 'true'
+            uses: docker/login-action@v3
+            with:
+                username: ${{ secrets.DOCKERHUB_USERNAME  }}
+                password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+        -   name: Download Dockerfile
+            run: curl -o Dockerfile $DOCKER_FILE
+
+        -   name: Build and export
+            uses: docker/build-push-action@v5
+            with:
+                platforms: |
+                    linux/amd64
+                    linux/arm/v7
+                    linux/arm64/v8
+                    linux/ppc64le
+                    linux/s390x
+                push: true
+                tags: ${{ steps.meta.outputs.tags }}
+                labels: ${{ steps.meta.outputs.labels }}
+                cache-from: type=gha
+                cache-to: type=gha,mode=max
+                file: ${{ env.DOCKER_FILE }}
